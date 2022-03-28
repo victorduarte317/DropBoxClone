@@ -1,34 +1,63 @@
 var express = require('express');
 var router = express.Router();
 var formidable = require('formidable');
+var fs = require('fs');
 
 /* GET home page. */
 router.get('/', function(req, res, next) {
   res.render('index', { title: 'Express' });
 });
 
-router.post('/upload', (req,res)=>{ // cria a rota de post
+// quando fizer o delete no diretório file
+router.delete('/file', (req, res)=>{
 
   let form = new formidable.IncomingForm({
+    uploadDir: './upload',
+    keepExtensions: true
+  })
 
-    uploadDir: './upload', // determina o diretorio que os arquivos que sofrerem upload serao armazenados
-    keepExtensions: true // mantém a extensão do arquivo
+  form.parse(req, (err, fields, files) => {
+    
+    let path = './' + fields.path;
 
-  });
+    // existsSync vai retornar true se o caminho (path) existir, e false se não.
+    if (fs.existsSync(path)) {
 
-  // vai tratar o request do nodejs como formulario
-  form.parse(req, (err, fields, files)=>{ // vai passar a requisiçao do express (do router), trata o erro e separa - em JSONs diferentes - quais dados foram enviados via post e quais deles sao arquivos
+      fs.unlink(path, err=>{
 
-    res.json({ // cria um objeto
+        if (err) {
+          res.status(400).json({
+            err
+          });
+        } else {
 
-      files
+          res.json({
+            fields
+          });
 
-    }); // responde os dados pro servidor
+        }
 
-  });
+      });
 
-  
+    }
+    
+  })
 
 });
+
+router.post('/upload', (req, res) => {
+
+  let form = new formidable.IncomingForm({
+    uploadDir: './upload',
+    keepExtensions: true
+  })
+
+  form.parse(req, (err, fields, files) => {
+    res.json({
+      files
+    })
+  })
+
+})
 
 module.exports = router;
