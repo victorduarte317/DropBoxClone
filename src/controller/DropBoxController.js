@@ -9,15 +9,16 @@ class DropBoxController {
     this.btnSendFileEl = document.querySelector("#btn-send-file");
     this.inputFilesEl = document.querySelector("#files");
     this.snackModalEl = document.querySelector("#react-snackbar-root");
+    this.progressBarEl = this.snackModalEl.querySelector(".mc-progress-bar-fg");
+    
+    this.nameFileEl = this.snackModalEl.querySelector(".filename")
+    this.timeLeftEl = this.snackModalEl.querySelector(".timeleft")  
     this.listFilesEl = document.querySelector('#list-of-files-and-directories')
+
 
     this.btnNewFolder = document.querySelector('#btn-new-folder');
     this.btnDelete = document.querySelector('#btn-delete');
     this.btnRename = document.querySelector('#btn-rename');
-
-    this.progressBarEl = this.snackModalEl.querySelector(".mc-progress-bar-fg");
-    this.nameFileEl = this.snackModalEl.querySelector(".filename")
-    this.timeLeftEl = this.snackModalEl.querySelector(".timeleft")  
 
     this.connectFirebase();
     this.initEvents();
@@ -50,7 +51,7 @@ class DropBoxController {
     let promises = [];
 
       // getselection pra ver quais os arquivos selecionados na tela, e pra cada um deles passa o li que foi selecionado e o evento
-      this.getSelection().forEach(li => {
+      this.getSelection().forEach((li) => {
 
       // pegando os dados dentro do li pra transformar em objeto JSON
 
@@ -58,38 +59,44 @@ class DropBoxController {
       let key = li.dataset.key;
 
       // dados que serao enviados ao servidor
-      let formData = new FormData();
+      let formData = new FormData()
 
       // append recebe o nome do campo que vai ser enviado no primeiro parametro
 
-      formData.append('path', file.path);
-      formData.append('key', file.key);
+      formData.append('path', file.path); 
+      formData.append('key', key);
 
       promises.push(this.ajax('/file', 'DELETE', formData));
 
+    });
+
         // retorna todas as promessas
         return Promise.all(promises);
-
-      });
 
   }
 
   initEvents() {
 
-    this.btnDelete.addEventListener('click', e => {
+    this.btnDelete.addEventListener("click", (e) => {
+      this.removeTask()
+      .then((responses) => {
 
-      this.removeTask().then(responses=>{
+      responses.forEach(response => {
 
-      }).catch(err => {
-
-        console.error(err);
-
-      });
-
+        if (response.fields.key) {
+          this.getFirebaseRef().child
+          (response.fields.key).remove();
+        }
+      })
+      
+      console.log("responses");
+    })
+      .catch((err) => {
+        console.log(err);
     });
-
-    this.btnRename.addEventListener('click', e => {
-
+  });
+    
+  this.btnRename.addEventListener("click", (e) => {
       let li = this.getSelection()[0]; // como o rename so funciona com 1 elemento selecionado, retorna a 1 posiçao do index
 
       let file = JSON.parse(li.dataset.file); // vai pegar a string gerada e transformar em objeto JSON
@@ -187,7 +194,7 @@ class DropBoxController {
   // valor padrao de method vai ser get (se ninguem passar nenhum metodo)
   // valor padrao de formdata vai ser um novo formdata
   
-  ajax(url, method = 'GET', formData = new FormData(), onprogress = function(){}, onloadstart = function(){}) {
+  ajax(url, method = 'GET', formData = new FormData(), onprogress = function(){}, onloadstart = function(){} ) {
 
     return new Promise((resolve, reject) => {
 
@@ -225,24 +232,29 @@ class DropBoxController {
     let promises = [];
 
     // pra cada arquivo faça
-    [...files].forEach(file => { // usa spread em files pq files é uma coleçao e o usuario pode escolher varios arquivos pra fazer upload, entao o spread vai criar uma posiçao pra cada arquivo
+    [...files].forEach((file) => { // usa spread em files pq files é uma coleçao e o usuario pode escolher varios arquivos pra fazer upload, entao o spread vai criar uma posiçao pra cada arquivo
 
       let formData = new FormData();
 
       formData.append('input-file', file);
 
-      promises.push(this.ajax('/upload', 'POST', formData, () => {
+      promises.push(
+        this.ajax(
+          '/upload', 
+          'POST', 
+          formData, 
+          () => {
 
         this.uploadProgress(event, file);
-      }, () => {
-
+      }, 
+      () => {
         this.startUploadTime = Date.now();
-
-      }));
-
-    }); // fecha o forEach
-
-    return Promise.all(promises); // promise all recebe um array de promessas. Funciona como um promise normal, se der tudo certo retorna resolve, se nao reject.
+      }
+    )
+      );
+  });
+    
+  return Promise.all(promises); // promise all recebe um array de promessas. Funciona como um promise normal, se der tudo certo retorna resolve, se nao reject.
 
   }
 
@@ -251,7 +263,6 @@ class DropBoxController {
     let timespent = Date.now() - this.startUploadTime; // o tempo gasto vai ser a hora de agora - a hora que o arquivo começou o upload
     let loaded = event.loaded;
     let total = event.total;
-
     let porcent = parseInt((loaded / total) * 100); // conta pra determinar a porcentagem de conclusão do upload
     let timeleft = ((100 - porcent) * timespent) / porcent; // conta pra calcular o tempo restante
 
@@ -297,8 +308,7 @@ class DropBoxController {
                         <path d="M77.955 53h50.04A3.002 3.002 0 0 1 131 56.007v58.988a4.008 4.008 0 0 1-4.003 4.005H39.003A4.002 4.002 0 0 1 35 114.995V45.99c0-2.206 1.79-3.99 3.997-3.99h26.002c1.666 0 3.667 1.166 4.49 2.605l3.341 5.848s1.281 2.544 5.12 2.544l.005.003z" fill="#71B9F4"></path>
                         <path d="M77.955 52h50.04A3.002 3.002 0 0 1 131 55.007v58.988a4.008 4.008 0 0 1-4.003 4.005H39.003A4.002 4.002 0 0 1 35 113.995V44.99c0-2.206 1.79-3.99 3.997-3.99h26.002c1.666 0 3.667 1.166 4.49 2.605l3.341 5.848s1.281 2.544 5.12 2.544l.005.003z" fill="#92CEFF"></path>
                     </g>
-                </svg>
-            `;
+                </svg>`;
         break;
 
       case 'image/jpeg':
