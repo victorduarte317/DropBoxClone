@@ -1,145 +1,295 @@
-class DropBoxController{
+class DropBoxController {
 
-    constructor() {
-        
-        // objetos que buscam o id dos elementos dentro do documento e pegam o valor pra si
-        this.btnSendFileEl = document.querySelector("#btn-send-file");
-        this.inputFilesEl = document.querySelector("#files"); 
-        this.snackModalEl = document.querySelector("#react-snackbar-root");
+  constructor() {
 
-        this.progressBarEl = this.snackModalEl.querySelector(".mc-progress-bar-fg");
-        this.nameFileEl = this.snackModalEl.querySelector(".filename")
-        this.timeLeftEl = this.snackModalEl.querySelector(".timeleft")
-    
-        this.initEvents(); // método pra iniciar eventos
+    // na mudança de seleçao cria-se um evento novo chamado selectionchange 
+    this.onselectionchange = new Event('selectionchange');
 
-    }
+    // objetos que buscam o id dos elementos dentro do documento e pegam o valor pra si
+    this.btnSendFileEl = document.querySelector("#btn-send-file");
+    this.inputFilesEl = document.querySelector("#files");
+    this.snackModalEl = document.querySelector("#react-snackbar-root");
+    this.listFilesEl = document.querySelector('#list-of-files-and-directories')
 
-    initEvents() {
+    this.btnNewFolder = document.querySelector('#btn-new-folder');
+    this.btnDelete = document.querySelector('#btn-delete');
+    this.btnRename = document.querySelector('#btn-rename');
 
-        this.btnSendFileEl.addEventListener("click", event =>{ // adiciona um evento no click
+    this.progressBarEl = this.snackModalEl.querySelector(".mc-progress-bar-fg");
+    this.nameFileEl = this.snackModalEl.querySelector(".filename")
+    this.timeLeftEl = this.snackModalEl.querySelector(".timeleft")  
 
-            this.inputFilesEl.click(); // evento que vai ser adicionado no click
+    this.connectFirebase();
+    this.initEvents();
+    this.readFiles();
+  }
 
-        })
+  connectFirebase() {
 
-        this.inputFilesEl.addEventListener("change", event =>{
+    var config = {
+      apiKey: 'AIzaSyB1P2z6rewIlsycykr6XsssuAabx20T6sQ',
+      authDomain: "dropbox-clone-3aa5c.firebaseapp.com",
+      databaseURL: "https://dropbox-clone-3aa5c-default-rtdb.firebaseio.com",
+      projectId: "dropbox-clone-3aa5c",
+      storageBucket: "dropbox-clone-3aa5c.appspot.com",
+      messagingSenderId: "162314827108",
+    };
 
-            this.uploadTask(event.target.files); // especifica que o alvo do evento é "files" e passa como parâmetro pra uploadTask tratar
-             
-            this.modalShow();
+    firebase.initializeApp(config);
 
-            this.inputFilesEl.value=''; // esvazia o inputFiles pro usuario poder inserir outro arquivo e dar trigger em change
-            
+  };
+
+  getSelection() {
+
+    return this.listFilesEl.querySelectorAll('.selected');
+
+  }
+
+  removeTask() {
+
+    let promises = [];
+
+      // getselection pra ver quais os arquivos selecionados na tela, e pra cada um deles passa o li que foi selecionado e o evento
+      this.getSelection().forEach(li => {
+
+      // pegando os dados dentro do li pra transformar em objeto JSON
+
+      let file = JSON.parse(li.dataset.file);
+      let key = li.dataset.key;
+
+      // dados que serao enviados ao servidor
+      let formData = new FormData();
+
+      // append recebe o nome do campo que vai ser enviado no primeiro parametro
+
+      formData.append('path', file.path);
+      formData.append('key', file.key);
+
+      promises.push(this.ajax('/file', 'DELETE', formData));
+
+        // retorna todas as promessas
+        return Promise.all(promises);
+
+      });
+
+  }
+
+  initEvents() {
+
+    this.btnDelete.addEventListener('click', e => {
+
+      this.removeTask().then(responses=>{
+
+      }).catch(err => {
+
+        console.error(err);
+
+      });
+
+    });
+
+    this.btnRename.addEventListener('click', e => {
+
+      let li = this.getSelection()[0]; // como o rename so funciona com 1 elemento selecionado, retorna a 1 posiçao do index
+
+      let file = JSON.parse(li.dataset.file); // vai pegar a string gerada e transformar em objeto JSON
+
+      let name = prompt("Renomeie o arquivo:", file.name); // vai abrir um prompt pra renomear o arquivo e mostrar o nome atual do arquivo
+
+      if (name) { // se a variavel nome tem conteúdo
+
+        file.name = name;
+
+        this.getFirebaseRef().child(li.dataset.key).set(file); // pega a referencia do firebase, tenta encontrar um "filho" lá com a mesma chave do arquivo sendo renomeado e coloca lá o novo valor do nome do arquivo (file.name)
+
+      }
+
+    });
+
+    // no eventlistener que retorna se a seleçao dos itens foi alterada ou nao
+    this.listFilesEl.addEventListener('selectionchange', e => {
+
+      // cria um swtich no tamanho do resgate da função que pega todos os elementos selecionados
+      switch (this.getSelection().length) {
+
+        case 0:
+          this.btnDelete.style.display = 'none';
+          this.btnRename.style.display = 'none';
+          break;
+
+        case 1:
+          this.btnDelete.style.display = 'block';
+          this.btnRename.style.display = 'block';
+          break;
+
+        default:
+          this.btnDelete.style.display = 'block';
+          this.btnRename.style.display = 'none';
+
+      }
+
+
+    });
+
+    this.btnSendFileEl.addEventListener("click", event => { // adiciona um evento no click
+
+      this.inputFilesEl.click(); // evento que vai ser adicionado no click
+
+    });
+
+    this.inputFilesEl.addEventListener("change", event => {
+
+      this.btnSendFileEl.disabled = true;
+
+      // respostas do promise.all
+      this.uploadTask(event.target.files).then(responses => { // especifica que o alvo do evento é "files" e passa como parâmetro pra uploadTask tratar
+
+        // faça isso pra cada resposta
+        responses.forEach(resp => {
+
+          // chama o metodo gerFirebaseRef, adiciona um item novo com push e guarda os dados com set
+          this.getFirebaseRef().push().set(resp.files['input-file']);
+
         });
 
-    } // fecha initEvents
+        this.uploadComplete();
 
-    modalShow(show = true) {
+      }).catch(err => {
 
-        this.snackModalEl.style.display = (show) ? 'block' : 'none'; // se o snack modal receber show = true, ele aparece. Se não, ele some.
+        this.uploadComplete();
+        console.log(err);
+
+      });
+
+      this.modalShow();
+    });
+
+  } // fecha initEvents
+
+  uploadComplete() {
+
+    this.modalShow(false);
+    this.inputFilesEl.value = ''; // esvazia o inputFiles pro usuario poder inserir outro arquivo e dar trigger em change
+    this.btnSendFileEl.disabled = false;
+
+  }
+
+  getFirebaseRef() { // método pra pegar a referencia de dentro da database do firebase
+
+    return firebase.database().ref('files'); // retorna efetivamente a referencia do database
+  }
+
+  modalShow(show = true) {
+
+    this.snackModalEl.style.display = (show) ? 'block' : 'none'; // se o snack modal receber show = true, ele aparece. Se não, ele some.
+  }
+
+  // valor padrao de method vai ser get (se ninguem passar nenhum metodo)
+  // valor padrao de formdata vai ser um novo formdata
+  
+  ajax(url, method = 'GET', formData = new FormData(), onprogress = function(){}, onloadstart = function(){}) {
+
+    return new Promise((resolve, reject) => {
+
+      let ajax = new XMLHttpRequest();
+
+      ajax.open(method, url); //passa o método (post) e o evento (upload)
+
+      ajax.onload = event => { // no load do ajax faz um try catch
+
+        try {
+          resolve(JSON.parse(ajax.responseText)); // tenta tratar os dados da resposta do servidor (ajax.responseText) com JSON
+        } catch (e) {
+
+          reject(e); // se nao der certo, retorna o evento do erro
+        }
+      }; // fecha o ajax onload
+
+      ajax.onerror = event => { // se der erro no ajax
+
+        reject(event); // retorna o evento do erro
+      }
+
+      ajax.upload.onprogress = onprogress;
+
+      onloadstart();
+
+      ajax.send(formData); // envia formData via ajax
+
+    }); // fecha a promessa
+
+  } // fecha o ajax()
+
+  uploadTask(files) {
+
+    let promises = [];
+
+    // pra cada arquivo faça
+    [...files].forEach(file => { // usa spread em files pq files é uma coleçao e o usuario pode escolher varios arquivos pra fazer upload, entao o spread vai criar uma posiçao pra cada arquivo
+
+      let formData = new FormData();
+
+      formData.append('input-file', file);
+
+      promises.push(this.ajax('/upload', 'POST', formData, () => {
+
+        this.uploadProgress(event, file);
+      }, () => {
+
+        this.startUploadTime = Date.now();
+
+      }));
+
+    }); // fecha o forEach
+
+    return Promise.all(promises); // promise all recebe um array de promessas. Funciona como um promise normal, se der tudo certo retorna resolve, se nao reject.
+
+  }
+
+  uploadProgress(event, file) {
+
+    let timespent = Date.now() - this.startUploadTime; // o tempo gasto vai ser a hora de agora - a hora que o arquivo começou o upload
+    let loaded = event.loaded;
+    let total = event.total;
+
+    let porcent = parseInt((loaded / total) * 100); // conta pra determinar a porcentagem de conclusão do upload
+    let timeleft = ((100 - porcent) * timespent) / porcent; // conta pra calcular o tempo restante
+
+    this.progressBarEl.style.width = `${porcent}%`; // o width vai definir o preenchimento da barra de progresso, precisa ser concatenado pq o css precisa saber qual unidade utilizar, se é px, em, %
+
+    this.nameFileEl.innerHTML = file.name; // o arquivo sendo atualizado vai receber o nome do arquivo e alterar no HTML
+    this.timeLeftEl.innerHTML = this.formatTime(timeleft); // passa o timeleft pra funçao formatTime
+
+  } // fecha uploadProgress
+
+  formatTime(duration) {
+
+    let seconds = parseInt((duration / 1000) % 60); // dessa forma, utilizando o módulo de 60, os segundos nao passam de 60 e não são mostrados quebrados
+    let minutes = parseInt((duration / (1000 * 60)) % 60);
+    let hours = parseInt((duration / (1000 * 60 * 60)) % 24);
+
+    if (hours > 0) {
+      return `${hours} hora(s), ${minutes} minuto(s) e ${seconds} segundo(s)`;
     }
 
-    uploadTask(files) {
-        
-        let promises = [];
-
-        // pra cada arquivo faça
-        [...files].forEach(file=>{ // usa spread em files pq files é uma coleçao e o usuario pode escolher varios arquivos pra fazer upload, entao o spread vai criar uma posiçao pra cada arquivo
-
-            promises.push(new Promise((resolve, reject)=>{ // coloca novos elementos no fim do array e retorna o novo tamanho do array
-
-                let ajax = new XMLHttpRequest();
-
-                ajax.open('POST', '/upload'); //passa o método (post) e o evento (upload)
-
-                ajax.onload = event => { // no load do ajax faz um try catch
-
-                    this.modalShow(false);
-
-                    try {
-                        resolve(JSON.parse(ajax.responseText)); // tenta tratar os dados da resposta do servidor (ajax.responseText) com JSON
-                    } catch(e) {
-
-                        reject(e); // se nao der certo, retorna o evento do erro
-                    }
-                }; // fecha o ajax onload
-
-                ajax.onerror = event => { // se der erro no ajax
-
-                    this.modalShow(false);
-                    reject(event); // retorna o evento do erro
-                }
-
-                ajax.upload.onprogress = event =>{ // vai pegar o progresso do upload via ajax
-
-                    this.uploadProgress(event, file); // event aqui vai ter a informaçao dos bytes e file é o arquivo
-                    console.log(event);
-
-                }
-
-                let formData = new FormData(); // api formdata
-
-                formData.append('input-file', file); // usa o append pra colocar file dentro do campo que o post vai receber (pode ter qualquer nome, nesse caso é input-file)
-
-                this.startUploadTime = Date.now(); // captura a data assim que o arquivo começa o upload pra podermos ter uma estimativa do tempo que ja passou
-
-                ajax.send(formData); // envia formData via ajax
-
-            })); // fecha a promise
-
-        }); // fecha o forEach
-
-        return Promise.all(promises); // promise all recebe um array de promessas. Funciona como um promise normal, se der tudo certo retorna resolve, se nao reject.
-
+    if (minutes > 0) {
+      return `${minutes} minuto(s) e ${seconds} segundo(s)`;
     }
 
-    uploadProgress(event, file) {
-        
-        let timespent = Date.now() - this.startUploadTime; // o tempo gasto vai ser a hora de agora - a hora que o arquivo começou o upload
-        let loaded = event.loaded;
-        let total = event.total;
+    if (seconds > 0) {
+      return `${seconds} segundo(s)`;
+    }
 
-        let porcent = parseInt((loaded / total) * 100); // conta pra determinar a porcentagem de conclusão do upload
-        let timeleft = ((100 - porcent) * timespent) / porcent; // conta pra calcular o tempo restante
-        
-        this.progressBarEl.style.width = `${porcent}%`; // o width vai definir o preenchimento da barra de progresso, precisa ser concatenado pq o css precisa saber qual unidade utilizar, se é px, em, %
+    return '';
 
-        this.nameFileEl.innerHTML = file.name; // o arquivo sendo atualizado vai receber o nome do arquivo e alterar no HTML
-        this.timeLeftEl.innerHTML = this.formatTime(timeleft); // passa o timeleft pra funçao formatTime
+  } // fecha formatTime
 
-        console.log(timespent, timeleft, porcent);
+  getFileIconView(file) {
 
-    } // fecha uploadProgress
-
-    formatTime(duration){ 
-
-        let seconds = parseInt((duration / 1000) % 60); // dessa forma, utilizando o módulo de 60, os segundos nao passam de 60 e não são mostrados quebrados
-        let minutes = parseInt((duration / (1000 * 60)) % 60); 
-        let hours = parseInt((duration / (1000 * 60 * 60)) % 24);
-        
-        if (hours > 0){
-            return `${hours} hora(s), ${minutes} minuto(s) e ${seconds} segundo(s)`;
-        }
-
-        if (minutes > 0){
-            return `${minutes} minuto(s) e ${seconds} segundo(s)`;
-        }
-
-        if (seconds > 0){
-            return `${seconds} segundo(s)`;
-        }
-
-        return '';
-
-    } // fecha formatTime
-
-    getFileIconView(file) {
-
-        // essa função vai tratar qual o tipo do arquivo e retornar o icone desse tipo
-        switch (file.type){
-            case 'folder':
-                return `  
+    // essa função vai tratar qual o tipo do arquivo e retornar o icone desse tipo
+    switch (file.type) {
+      case 'folder':
+        return `  
                 
                 <svg width="160" height="160" viewBox="0 0 160 160" class="mc-icon-template-content tile__preview tile__preview--icon">
                     <title>content-folder-large</title>
@@ -149,13 +299,14 @@ class DropBoxController{
                     </g>
                 </svg>
             `;
-            break;
+        break;
 
-            case 'image/jpeg':
-            case 'image/jpg':
-            case 'image/png':
-            case 'image.gif':
-                return `
+      case 'image/jpeg':
+      case 'image/jpg':
+      case 'image/png':
+      case 'image.gif':
+      case 'application/octet-stream':
+        return `
                     <li>
                         <svg version="1.1" id="Camada_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="160px" height="160px" viewBox="0 0 160 160" enable-background="new 0 0 160 160" xml:space="preserve">
                             <filter height="102%" width="101.4%" id="mc-content-unknown-large-a" filterUnits="objectBoundingBox" y="-.5%" x="-.7%">
@@ -199,10 +350,10 @@ class DropBoxController{
                     </li>
                 
                 `;
-            break;
+        break;
 
-            case 'application/pdf':
-                return `
+      case 'application/pdf':
+        return `
                         <li>
                         <svg version="1.1" id="Camada_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" width="160px" height="160px" viewBox="0 0 160 160" enable-background="new 0 0 160 160" xml:space="preserve">
                             <filter height="102%" width="101.4%" id="mc-content-unknown-large-a" filterUnits="objectBoundingBox" y="-.5%" x="-.7%">
@@ -240,12 +391,13 @@ class DropBoxController{
                     </li>
                 
                 `;
-            break;
+        break;
 
-            case 'audio/mp3':
-            case 'audio/mp4':
-            case 'audio/ogg':
-                return `
+      case 'audio/mp3':
+      case 'audio/mp4':
+      case 'audio/ogg':
+      case 'audio/mpeg':
+        return `
                         <li>
                         <svg width="160" height="160" viewBox="0 0 160 160" class="mc-icon-template-content tile__preview tile__preview--icon">
                             <title>content-audio-large</title>
@@ -264,16 +416,16 @@ class DropBoxController{
                                 <path d="M67 60c0-1.657 1.347-3 3-3 1.657 0 3 1.352 3 3v40c0 1.657-1.347 3-3 3-1.657 0-3-1.352-3-3V60zM57 78c0-1.657 1.347-3 3-3 1.657 0 3 1.349 3 3v4c0 1.657-1.347 3-3 3-1.657 0-3-1.349-3-3v-4zm40 0c0-1.657 1.347-3 3-3 1.657 0 3 1.349 3 3v4c0 1.657-1.347 3-3 3-1.657 0-3-1.349-3-3v-4zm-20-5.006A3 3 0 0 1 80 70c1.657 0 3 1.343 3 2.994v14.012A3 3 0 0 1 80 90c-1.657 0-3-1.343-3-2.994V72.994zM87 68c0-1.657 1.347-3 3-3 1.657 0 3 1.347 3 3v24c0 1.657-1.347 3-3 3-1.657 0-3-1.347-3-3V68z" fill="#637282"></path>
                             </g>
                         </svg>
-                        <div class="name text-center">Music</div>
+                        <div class="name text-center">Áudio</div>
                     </li>
                 `;
-            break;
+        break;
 
-            case 'video/mp4':
-            case 'video/wmv':
-            case 'video/quicktime':
+      case 'video/mp4':
+      case 'video/wmv':
+      case 'video/quicktime':
 
-                return `
+        return `
                         <li>
                         <svg width="160" height="160" viewBox="0 0 160 160" class="mc-icon-template-content tile__preview tile__preview--icon">
                             <title>content-video-large</title>
@@ -297,9 +449,9 @@ class DropBoxController{
 
                 `;
 
-            break;
+        break;
 
-            default: `
+      default: `
             <li>
             <svg width="160" height="160" viewBox="0 0 160 160" class="mc-icon-template-content tile__preview tile__preview--icon">
                     <title>1357054_617b.jpg</title>
@@ -320,18 +472,115 @@ class DropBoxController{
                 <div class="name text-center">Arquivo</div>
             </li>
         `;
-        }
-
     }
 
-    getFileView(file){
-        // essa classe retorna, efetivamente, o icone do arquivo e o nome dele
-        return `
-        <li>    
+  }
+
+  getFileView(file, key) {
+    // essa classe retorna, efetivamente, o icone do arquivo e o nome dele
+    let li = document.createElement('li'); // li precisa ser criado pra ser inserido no appendChild do readfiles.
+
+    // como os elementos precisam ser identificados, usamos dataset com o nome "key" pra receber a chave de identificação unica que é gerada a cada arquivo.
+    li.dataset.key = key;
+    li.dataset.file = JSON.stringify(file); // como file é objeto e dentro de dataset só podem ser guardadas strings, precisa fazer JSON stringify
+
+    li.innerHTML = `
             ${this.getFileIconView(file)}
             <div class="name text-center">${file.name}</div>
-        </li>
-        `;
-    }
+          `
+    this.initEventsLi(li);
+    return li;
+
+
+
+  } // fecha o getFileView
+
+  readFiles() {
+    this.getFirebaseRef().on('value', snapshot => { // pega a referencia do firebase e deixa ele ativo, verificando se ocorre alguma mudança. Quando ocorre, o firebase dispara o evento 'value'. Nessa arrow function, passa-se value e o evento de snapshot, uma captura do momento da alteração.
+
+
+      this.listFilesEl.innerHTML = ''; // limpou pra poder adicionar 
+
+      // pra cada item dessa captura faça
+      snapshot.forEach(snapshotItem => {
+
+        let key = snapshotItem.key;
+        let data = snapshotItem.val();
+
+        this.listFilesEl.appendChild(this.getFileView(data, key));
+
+      });
+
+    });
+
+  } // fecha o readFiles
+
+  initEventsLi(li) {
+
+    li.addEventListener('click', e => {
+
+      if (e.shiftKey) {
+        // vai procurar quem é o primeiro elemento clicado e armazenar na variável
+        let firstLi = this.listFilesEl.querySelector('li.selected');
+        // let lastLi = this.listFilesEl.querySelector('.selected').pop();
+
+        // se o primeiro "li" existe, ou seja, se um li já foi clicado e selecionado
+        if (firstLi) {
+
+          let indexStart;
+          let indexEnd;
+          let lis = li.parentElement.childNodes;
+
+          // firstLi é o primeiro li, e li é o último. Então, pra selecionar todos os arquivos no intervalo entre o primeiro e o último, é preciso ler toda a lista e coletar todos os index. Pra isso, é preciso acessar o elemento pai de li.
+          // vai fazer um forEach nos elementos filhos do elemento pai, querendo saber quais são os elementos e os index deles.
+          lis.forEach((el, index) => {
+
+            // se os elementos forem identicos à "el" passado no forEach, o index deles é definido pelo próprio forEach 
+            if (firstLi === el) indexStart = index;
+            if (li === el) indexEnd = index;
+
+          })
+
+          // sort() vai ordenar o index
+          let index = [indexStart, indexEnd].sort()
+
+          lis.forEach((el, i) => {
+
+            // se o i for maior ou igual ao index da primeira posição e for menor igual ao index da segunda posição
+            if (i >= index[0] && i <= index[1]) {
+
+              // seleciona os elementos
+              el.classList.add('selected')
+            }
+
+          });
+
+          // o listFilesEl vai disparar o evento criado
+          this.listFilesEl.dispatchEvent(this.onselectionchange);
+
+          return true;
+        }
+
+      }
+
+      // como a pagina ta interpretando todos os cliques como se fossem com o ctrl pressionado, é preciso tratar como: se a tecla nao estiver sendo pressionada, entao trate como se ela nao tiver sendo pressionada
+      if (!e.ctrlKey) {
+
+        // procura dentro do elemento listFIles quais "li" estao selected, pra cada li selecionado
+        this.listFilesEl.querySelectorAll('li.selected').forEach(el => {
+
+          el.classList.remove('selected'); // vai remover a classe selected de li
+        });
+
+      }
+
+      li.classList.toggle('selected');
+
+      this.listFilesEl.dispatchEvent(this.onselectionchange);
+
+
+    });
+
+  }
 
 } // fecha o controller
