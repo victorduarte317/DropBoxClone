@@ -2,6 +2,9 @@ class DropBoxController {
 
   constructor() {
 
+    // pra não se perder nas pastas, cada pasta acessada vai acrescentar um no array
+    this.currentFolder = ['clear'];
+
     // na mudança de seleçao cria-se um evento novo chamado selectionchange 
     this.onselectionchange = new Event('selectionchange');
 
@@ -76,6 +79,27 @@ class DropBoxController {
   }
 
   initEvents() {
+
+    this.btnNewFolder.addEventListener("click", (e) =>{
+
+      let name = prompt('Nome da nova pasta: ');
+
+      // se um nome for digitado
+      if (name) {
+
+        // dentro do firebase vai acrescentar uma nova pasta - identificada pelo type:'folder' (switch)
+        this.getFirebaseRef().push().set({
+
+          name,
+          type:'folder',
+          path:this.currentFolder.join('/')
+          // caminho do currentfolder
+
+        })
+
+      }
+
+    });
 
     this.btnDelete.addEventListener("click", (e) => {
       this.removeTask()
