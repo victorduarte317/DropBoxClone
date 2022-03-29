@@ -8,6 +8,8 @@ class DropBoxController {
     // na mudança de seleçao cria-se um evento novo chamado selectionchange 
     this.onselectionchange = new Event('selectionchange');
 
+    this.navEl = document.querySelector('#browse-location');
+
     // objetos que buscam o id dos elementos dentro do documento e pegam o valor pra si
     this.btnSendFileEl = document.querySelector("#btn-send-file");
     this.inputFilesEl = document.querySelector("#files");
@@ -25,7 +27,7 @@ class DropBoxController {
 
     this.connectFirebase();
     this.initEvents();
-    this.readFiles();
+    this.openFolder();
   }
 
   connectFirebase() {
@@ -78,11 +80,11 @@ class DropBoxController {
 
   }
 
+
   initEvents() {
 
-    this.btnNewFolder.addEventListener("click", (e) =>{
-
-      let name = prompt('Nome da nova pasta: ');
+    this.btnNewFolder.addEventListener("click", e =>{
+      let name = prompt('Nome da nova pasta:');
 
       // se um nome for digitado
       if (name) {
@@ -99,7 +101,7 @@ class DropBoxController {
 
       }
 
-    });
+    })
 
     this.btnDelete.addEventListener("click", (e) => {
       this.removeTask()
@@ -205,9 +207,14 @@ class DropBoxController {
 
   }
 
-  getFirebaseRef() { // método pra pegar a referencia de dentro da database do firebase
+  getFirebaseRef(path) { // método pra pegar a referencia de dentro da database do firebase
 
-    return firebase.database().ref('files'); // retorna efetivamente a referencia do database
+    // join pega o array currentFolder, junta ele e adiciona o separador '/'
+
+    if (!path) path = this.currentFolder.join('/');
+
+    return firebase.database().ref(path); // retorna efetivamente a referencia do database
+
   }
 
   modalShow(show = true) {
@@ -524,24 +531,27 @@ class DropBoxController {
           `
     this.initEventsLi(li);
     return li;
-
-
-
-  } // fecha o getFileView
-
+  }
   readFiles() {
-    this.getFirebaseRef().on('value', snapshot => { // pega a referencia do firebase e deixa ele ativo, verificando se ocorre alguma mudança. Quando ocorre, o firebase dispara o evento 'value'. Nessa arrow function, passa-se value e o evento de snapshot, uma captura do momento da alteração.
+    // a ultima pasta vai ser a que o usuario estiver abrindo, entao como nao vai passar um path, a ultima
+    // pasta vai ser o currentfolder com join
+    this.lastFolder = this.currentFolder.join('/');
 
+    this.getFirebaseRef().on('value', (snapshot) => { // pega a referencia do firebase e deixa ele ativo, verificando se ocorre alguma mudança. Quando ocorre, o firebase dispara o evento 'value'. Nessa arrow function, passa-se value e o evento de snapshot, uma captura do momento da alteração.
 
       this.listFilesEl.innerHTML = ''; // limpou pra poder adicionar 
 
       // pra cada item dessa captura faça
-      snapshot.forEach(snapshotItem => {
+      snapshot.forEach((snapshotItem) => {
 
         let key = snapshotItem.key;
         let data = snapshotItem.val();
 
+        // se o arquivo tem um tipo de data, então ele é renderizado na tela. Se não, não renderiza.
+        if(data.type) {
+
         this.listFilesEl.appendChild(this.getFileView(data, key));
+        }
 
       });
 
@@ -549,13 +559,105 @@ class DropBoxController {
 
   } // fecha o readFiles
 
+  openFolder() {
+
+    // o intuito aqui é fazer com que o programa preste atenção só no escopo da pasta aberta no momento
+    // ou seja, fazer ele parar de prestar atenção na interface main quando o usuario abrir uma pasta
+
+    // aqui, checa se tem uma ultima pasta, pega essa pasta no firebase e desliga o evento dela.
+    if (this.lastFolder) this.getFirebaseRef(this.lastFolder)
+    .off('value');
+
+    this.renderNav();
+    this.readFiles();
+
+  }
+
+  // método pra renderizar e deixar a barra de navegaçao responsiva
+  renderNav() {
+
+    // cria o elemento da barra de navegaçao
+    let nav = document.createElement('nav');
+    let path = [];
+
+    // for usado pra alimentar o elemento nav dinamicamente
+    // conforme for passando por dentro das pastas, vai pegar o nome delas
+    for (let i = 0; i < this.currentFolder.length; i++) {
+
+      let folderName = this.currentFolder[i];
+      let span = document.createElement('span');
+
+      path.push(folderName);
+
+      if ((i+1) === this.currentFolder.length) {
+
+        span.innerHTML = folderName;
+
+      } else {
+
+        span.className = 'breadcrumb-segment__wrapper'
+        span.innerHTML = `
+
+        <span class="ue-effect-container uee-BreadCrumbSegment-link-0">
+          <a href="#" data-path="${path.join('/')}" class="breadcrumb-segment">${folderName}</a>
+        </span>
+        <svg width="24" height="24" viewBox="0 0 24 24" class="mc-icon-template-stateless" style="top: 4px; position: relative;">
+        <title>arrow-right</title>
+        <path d="M10.414 7.05l4.95 4.95-4.95 4.95L9 15.534 12.536 12 9 8.464z" fill="#637282" fill-rule="evenodd"></path>
+        </svg>
+
+        `;
+      }
+
+      nav.appendChild(span);
+
+    }
+
+    this.navEl.innerHTML = nav.innerHTML;
+
+    this.navEl.querySelectorAll('a').forEach(a=>{
+
+      a.addEventListener('click', e=>{
+
+        e.preventDefault();
+
+        this.currentFolder =  a.dataset.path.split('/');
+
+        this.openFolder();
+       
+      });
+
+    });
+
+  }
+
   initEventsLi(li) {
 
-    li.addEventListener('click', e => {
+    li.addEventListener('dblclick', e => { // adiciona um eventlistener de click duplo pro li
+
+        // pega as informaçoes do arquivo dentro do li pra distinguir se é um arquivo ou uma pasta
+        let file = JSON.parse(li.dataset.file);
+  
+        switch(file.type) {
+  
+          case 'folder':
+            this.currentFolder.push(file.name)
+            this.openFolder()
+          break;
+  
+  
+          default: 
+          // abre o arquivo clicado
+          window.open('/file?path=' + file.path)
+        }
+  
+      }) // fecha o dblclick
+
+      li.addEventListener('click', (e) =>{
 
       if (e.shiftKey) {
         // vai procurar quem é o primeiro elemento clicado e armazenar na variável
-        let firstLi = this.listFilesEl.querySelector('li.selected');
+        let firstLi = this.listFilesEl.querySelector('.selected');
         // let lastLi = this.listFilesEl.querySelector('.selected').pop();
 
         // se o primeiro "li" existe, ou seja, se um li já foi clicado e selecionado
@@ -573,10 +675,10 @@ class DropBoxController {
             if (firstLi === el) indexStart = index;
             if (li === el) indexEnd = index;
 
-          })
+          });
 
           // sort() vai ordenar o index
-          let index = [indexStart, indexEnd].sort()
+          let index = [indexStart, indexEnd].sort();
 
           lis.forEach((el, i) => {
 
@@ -584,7 +686,7 @@ class DropBoxController {
             if (i >= index[0] && i <= index[1]) {
 
               // seleciona os elementos
-              el.classList.add('selected')
+              el.classList.add('selected');
             }
 
           });
@@ -601,7 +703,7 @@ class DropBoxController {
       if (!e.ctrlKey) {
 
         // procura dentro do elemento listFIles quais "li" estao selected, pra cada li selecionado
-        this.listFilesEl.querySelectorAll('li.selected').forEach(el => {
+        this.listFilesEl.querySelectorAll('li.selected').forEach((el) => {
 
           el.classList.remove('selected'); // vai remover a classe selected de li
         });
